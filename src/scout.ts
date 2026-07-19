@@ -37,8 +37,8 @@ export async function scout(input: string, opts: ScoutOptions = {}): Promise<Ori
     const b = base()
     b.summary = `Remote repository — orientation needs a clone (consent-gated).`
     b.approach = await planApproach(process.cwd(), opts, { manifest: null, build: b.build, risks: [], isGitUrl: true })
-    b.notes.push('Pass --allow-clone to fetch and orient, or point Pathfinder at a local checkout.')
-    b.suggestedNextProbe.push('git clone the repo to a scratch dir, then re-run Pathfinder on the local path.')
+    b.notes.push('Pass --allow-clone to fetch and orient, or point Voyager Repo at a local checkout.')
+    b.suggestedNextProbe.push('git clone the repo to a scratch dir, then re-run Voyager Repo on the local path.')
     return b
   }
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * pathfinder / voyager-repo CLI — orient in an unknown repository, safely.
+ * voyager-repo CLI — orient in an unknown repository, safely.
  */
 import { scout } from './scout.js'
 import { VERSION } from './version.js'
@@ -22,10 +22,10 @@ function parseArgs(argv: string[]): { flags: Record<string, string | boolean>; p
   return { flags, positionals }
 }
 
-const HELP = `pathfinder (voyager-repo) v${VERSION} — Voyager's repo organ: an agent's safe scout
+const HELP = `voyager-repo v${VERSION} — Voyager's repo organ: an agent's safe scout
 
 USAGE
-  pathfinder scout [path] [--check-deps N] [--allow-install] [--allow-exec]
+  voyager-repo scout [path] [--check-deps N] [--allow-install] [--allow-exec]
                           [--allow-clone] [--max-files N] [--json]
         Orient in the repo at [path] (default: current dir). READ-ONLY: maps
         purpose/structure/build/health/risks, frames all owner text as untrusted,
@@ -33,8 +33,8 @@ USAGE
         present, and WITHHOLDS install/exec/clone until you consent.
         Exit: 0 oriented · 1 oriented + HIGH-risk finding(s) · 2 tool error.
 
-  pathfinder mcp                  Start the stdio MCP server (tool: scout_repo).
-  pathfinder help | --version
+  voyager-repo mcp                  Start the stdio MCP server (tool: scout_repo).
+  voyager-repo help | --version
 
 Nothing in the target is ever executed on the host. Consent flags gate invasive
 steps; execution (when allowed) belongs in a sandbox.`

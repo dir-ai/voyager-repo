@@ -1,6 +1,6 @@
 import type { BuildInfo, ManifestFacts } from './types.js'
 
-/** Infer the commands an agent COULD run (Pathfinder never runs them itself). */
+/** Infer the commands an agent COULD run (Voyager Repo never runs them itself). */
 export function inferBuild(manifest: ManifestFacts | null): BuildInfo {
   if (!manifest) return { install: null, build: null, test: null, run: null, packageManager: null }
 

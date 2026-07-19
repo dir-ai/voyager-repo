@@ -4,7 +4,7 @@ import { frame } from './manifest.js'
 import type { ApproachPlan, BuildInfo, ManifestFacts, Permissions, RiskFinding, ScoutOptions } from './types.js'
 
 /**
- * The APPROACH PROTOCOL — the heart of Pathfinder. When an agent lands in an
+ * The APPROACH PROTOCOL — the heart of Voyager Repo. When an agent lands in an
  * unknown repo it must behave like a careful newcomer, not a bulldozer:
  *   1. Look for a Repotector presence and HANDSHAKE with it (respect its zones).
  *   2. Assume READ-ONLY. Any install / code-execution / clone is WITHHELD until

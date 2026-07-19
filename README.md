@@ -1,11 +1,11 @@
-# voyager-repo · Pathfinder
+# voyager-repo
 
 **Voyager's repo-penetration organ — the eyes an AI agent sends ahead before it
 touches an unknown repository.**
 
 Voyager penetrates the **web** ([`@dir-ai/voyager`](https://www.npmjs.com/package/@dir-ai/voyager)),
 the **repo** (this), and — next — **networks**. Repotector is the repo's guardian
-that *receives and controls*; Pathfinder is the agent's counterpart that *reaches
+that *receives and controls*; Voyager Repo is the agent's counterpart that *reaches
 outward* and reports back, safely.
 
 ```bash
@@ -56,7 +56,7 @@ A careful newcomer, not a bulldozer:
 ## MCP
 
 ```bash
-pathfinder mcp    # or: voyager-repo mcp
+voyager-repo mcp
 ```
 
 Tool: `scout_repo` — same orientation, safe-by-default (invasive flags off).

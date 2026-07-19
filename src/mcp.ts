@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * pathfinder / voyager-repo MCP server (stdio). One tool: scout_repo — an agent's
+ * voyager-repo / voyager-repo MCP server (stdio). One tool: scout_repo — an agent's
  * safe orientation in an unknown repository. Read-only by default; invasive
  * capabilities are explicit booleans that default OFF (fail-closed).
  */
@@ -61,7 +61,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 export async function startMcpServer(): Promise<void> {
   const transport = new StdioServerTransport()
   await server.connect(transport)
-  console.error(`voyager-repo (pathfinder) MCP server v${VERSION} ready (stdio)`)
+  console.error(`voyager-repo (voyager-repo) MCP server v${VERSION} ready (stdio)`)
 }
 
 import { fileURLToPath } from 'node:url'

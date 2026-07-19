@@ -1,6 +1,6 @@
 # Security
 
-Pathfinder points an agent at *untrusted* repositories, so its whole design is
+Voyager Repo points an agent at *untrusted* repositories, so its whole design is
 defensive.
 
 ## No execution of target code
@@ -21,7 +21,7 @@ so a hostile repo cannot smuggle instructions into your model through a "brief".
 ## Bounded, symlink-safe traversal
 
 The walk is breadth-first and bounded (`maxFiles`), skips heavy/noise dirs, and
-**never follows symlinks** — a repo cannot make Pathfinder traverse out of its
+**never follows symlinks** — a repo cannot make Voyager Repo traverse out of its
 own tree into the host filesystem. File reads are byte-capped.
 
 ## Fail-closed, honest exit codes
@@ -34,7 +34,7 @@ own tree into the host filesystem. File reads are byte-capped.
 ## Composition, least privilege
 
 Dependency verdicts are delegated to `@dir-ai/voyager` (OSV-gated, its own closed
-egress allowlist). Pathfinder itself makes no network calls except that delegated
+egress allowlist). Voyager Repo itself makes no network calls except that delegated
 verification, and only when `--check-deps` is set.
 
 ## Reporting

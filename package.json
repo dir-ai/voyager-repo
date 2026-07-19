@@ -1,7 +1,7 @@
 {
   "name": "@dir-ai/voyager-repo",
   "version": "0.1.0",
-  "description": "Pathfinder — Voyager's repo-penetration organ: an AI agent's proactive scout that safely orients itself in an unknown repository before touching it. Read-only, framed, confidence-scored.",
+  "description": "Voyager's repo-penetration organ: an AI agent's proactive, read-only scout to safely orient in an unknown repository before touching it. Framed, confidence-scored.",
   "type": "module",
   "license": "MIT",
   "author": "dir-ai",
@@ -27,7 +27,6 @@
   "mcpName": "io.github.dir-ai/voyager-repo",
   "bin": {
     "voyager-repo": "dist/cli.js",
-    "pathfinder": "dist/cli.js",
     "voyager-repo-mcp": "dist/mcp.js"
   },
   "main": "dist/index.js",

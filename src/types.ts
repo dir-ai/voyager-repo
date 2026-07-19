@@ -1,4 +1,4 @@
-// Pathfinder (voyager-repo) — the shared shapes for an agent's orientation in an
+// voyager-repo — the shared shapes for an agent's orientation in an
 // unknown repository. Everything the agent reads FROM the repo is untrusted; the
 // brief separates verified structural facts from framed, owner-controlled text.
 
@@ -39,7 +39,7 @@ export interface ManifestFacts {
 }
 
 export interface BuildInfo {
-  /** Detected commands the agent could run (NOT run by Pathfinder). */
+  /** Detected commands the agent could run (NOT run by Voyager Repo). */
   install: string | null
   build: string | null
   test: string | null

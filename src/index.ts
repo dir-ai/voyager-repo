@@ -1,4 +1,4 @@
-// Pathfinder (@dir-ai/voyager-repo) — Voyager's repo-penetration organ. Gives an
+// Voyager Repo (@dir-ai/voyager-repo) — Voyager's repo-penetration organ. Gives an
 // AI agent proactive, SAFE orientation in an unknown repository: it reads (never
 // executes), frames every owner-controlled byte as untrusted evidence, composes
 // with @dir-ai/voyager to vet dependencies, handshakes with Repotector when
