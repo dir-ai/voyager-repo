@@ -32,12 +32,19 @@ export async function scout(input: string, opts: ScoutOptions = {}): Promise<Ori
     confidence: 'weak', sanitization: { framedFields: 0, strippedPayloads: 0 }, suggestedNextProbe: [], notes: [],
   })
 
-  // A remote URL cannot be oriented without cloning — which is consent-gated.
+  // A remote URL cannot be oriented without cloning — which is consent-gated. Do
+  // NOT run a filesystem approach plan against the CWD here (it would scan the
+  // AGENT'S OWN directory for .repotector and surface an unrelated handshake).
   if (isGitUrl && opts.clone !== true) {
     const b = base()
-    b.summary = `Remote repository — orientation needs a clone (consent-gated).`
-    b.approach = await planApproach(process.cwd(), opts, { manifest: null, build: b.build, risks: [], isGitUrl: true })
-    b.notes.push('Pass --allow-clone to fetch and orient, or point Voyager Repo at a local checkout.')
+    b.summary = `Remote repository — orientation needs a clone (consent-gated). Cloning is not yet implemented; use a local checkout.`
+    b.approach = {
+      repotector: 'absent',
+      permissions: { read: true, install: false, exec: false, clone: false },
+      withheld: ['clone the remote repository (not yet implemented — use a local checkout)'],
+      orderedNextSteps: ['obtain a local checkout of the repo', 'run voyager-repo scout on the local path'],
+    }
+    b.notes.push('Remote clone-and-orient is not implemented yet — git clone to a scratch dir and point Voyager Repo at the local path.')
     b.suggestedNextProbe.push('git clone the repo to a scratch dir, then re-run Voyager Repo on the local path.')
     return b
   }

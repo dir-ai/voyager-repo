@@ -1,5 +1,4 @@
-import { join } from 'node:path'
-import { exists, readTextCapped } from './util.js'
+import { existsContained, readTextContained } from './util.js'
 import { frame } from './manifest.js'
 import type { ApproachPlan, BuildInfo, ManifestFacts, Permissions, RiskFinding, ScoutOptions } from './types.js'
 
@@ -21,12 +20,14 @@ export async function planApproach(
   // read what it will tell us (active zones/leases) — framed, since it is content.
   let repotector: ApproachPlan['repotector'] = 'absent'
   let handshake: ApproachPlan['handshake']
-  if (await exists(join(root, '.repotector'))) {
+  if (await existsContained(root, '.repotector')) {
     repotector = 'present'
+    // Contained reads: a symlinked ledger (e.g. -> ~/.ssh/id_rsa) resolves outside
+    // the root and reads as absent, so a hostile repo can't exfiltrate a host file.
     const ledger =
-      (await readTextCapped(join(root, '.repotector', 'register.jsonl'), 64 * 1024)) ??
-      (await readTextCapped(join(root, '.repotector', 'handshake.json'), 64 * 1024)) ??
-      (await readTextCapped(join(root, '.repotector', 'README.md'), 64 * 1024))
+      (await readTextContained(root, '.repotector/register.jsonl', 64 * 1024)) ??
+      (await readTextContained(root, '.repotector/handshake.json', 64 * 1024)) ??
+      (await readTextContained(root, '.repotector/README.md', 64 * 1024))
     const lines = ledger ? ledger.split('\n').filter(Boolean).length : 0
     handshake = {
       note: `Repotector present — handshake performed. ${lines} ledger record(s). Respect its active zones/leases before editing.`,

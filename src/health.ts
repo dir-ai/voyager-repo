@@ -1,4 +1,5 @@
 import { run } from './util.js'
+import { cleanInline } from './manifest.js'
 import type { RepoHealth } from './types.js'
 
 /** Derive maintenance/attention signals from git history (read-only). */
@@ -38,7 +39,7 @@ export async function scanHealth(root: string): Promise<RepoHealth> {
   const hotspots = Object.entries(churn)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
-    .map(([f, n]) => `${f} (${n}×)`)
+    .map(([f, n]) => `${cleanInline(f, 160)} (${n}×)`) // filenames are owner-controlled → clean
 
   return {
     isGitRepo: true,

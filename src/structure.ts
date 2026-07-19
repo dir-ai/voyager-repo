@@ -1,4 +1,5 @@
 import { walkRepo } from './util.js'
+import { cleanInline } from './manifest.js'
 import type { StructureMap, ManifestFacts } from './types.js'
 
 const EXT_LANG: Record<string, string> = {
@@ -34,17 +35,16 @@ export async function scanStructure(root: string, maxFiles: number, manifest: Ma
   const languages = Object.fromEntries(Object.entries(langCount).sort((a, b) => b[1] - a[1]))
 
   const keyDirs = dirs
-    .map((d) => ({ path: d, role: DIR_ROLE[d] ?? 'unclassified' }))
+    .map((d) => ({ path: cleanInline(d, 120), role: DIR_ROLE[d] ?? 'unclassified' }))
     .sort((a, b) => (a.role === 'unclassified' ? 1 : 0) - (b.role === 'unclassified' ? 1 : 0))
 
-  // Entrypoints: manifest bin/main first (authoritative), then conventional files.
+  // Entrypoints: manifest main/bin FIRST (authoritative), then conventional files.
   const entrypoints: string[] = []
   const push = (p: string | undefined | null) => {
-    if (p && present.has(p) && !entrypoints.includes(p)) entrypoints.push(p)
+    const norm = p ? p.replace(/^\.\//, '') : null
+    if (norm && present.has(norm) && !entrypoints.includes(norm)) entrypoints.push(norm)
   }
-  if (manifest?.ecosystem === 'npm') {
-    // main/bin are read separately in manifest scan; conventional fallbacks here.
-  }
+  for (const hint of manifest?.entryHints ?? []) push(hint)
   for (const c of ENTRY_CANDIDATES) push(c)
 
   return { root, fileCount: files.length, truncated, languages, keyDirs, entrypoints }

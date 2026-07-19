@@ -36,6 +36,10 @@ export interface ManifestFacts {
   scripts: Record<string, string>
   directDependencies: string[]
   hasLockfile: boolean
+  /** The package manager implied by the lockfile present (npm/pnpm/yarn), if any. */
+  packageManager: 'npm' | 'pnpm' | 'yarn' | 'pip' | 'poetry' | 'cargo' | 'go' | null
+  /** Authoritative entrypoints declared by the manifest (main / bin), cleaned. */
+  entryHints: string[]
 }
 
 export interface BuildInfo {

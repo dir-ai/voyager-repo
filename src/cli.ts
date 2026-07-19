@@ -87,6 +87,13 @@ function render(b: OrientationBrief): void {
   if (b.notes.length) for (const n of b.notes) console.log(`\nnote: ${n}`)
 }
 
+/** Clamp --max-files to the same [50, 20000] range the MCP path enforces (a
+ *  negative or huge value would otherwise walk 0 files, or be unbounded). */
+function clampMaxFiles(n: number): number | undefined {
+  if (!Number.isFinite(n) || n <= 0) return undefined
+  return Math.min(20_000, Math.max(50, Math.floor(n)))
+}
+
 async function main(): Promise<number> {
   const [cmd, ...rest] = process.argv.slice(2)
   const { flags, positionals } = parseArgs(rest)
@@ -110,7 +117,7 @@ async function main(): Promise<number> {
         install: flags['allow-install'] === true,
         exec: flags['allow-exec'] === true,
         clone: flags['allow-clone'] === true,
-        maxFiles: typeof flags['max-files'] === 'string' ? Number(flags['max-files']) || undefined : undefined,
+        maxFiles: typeof flags['max-files'] === 'string' ? clampMaxFiles(Number(flags['max-files'])) : undefined,
         onLog: (l) => { if (!json) console.error(`  · ${l}`) },
       }
       const b = await scout(positionals[0] ?? '.', opts)

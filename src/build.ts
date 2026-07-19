@@ -6,12 +6,15 @@ export function inferBuild(manifest: ManifestFacts | null): BuildInfo {
 
   if (manifest.ecosystem === 'npm') {
     const s = manifest.scripts
-    const pm = manifest.hasLockfile ? 'npm' : 'npm'
-    const has = (k: string) => (s[k] ? `npm run ${k}` : null)
+    // Honor the ACTUAL lockfile so we don't tell an agent to `npm install` in a
+    // pnpm/yarn repo (which would corrupt the lockfile / regenerate deps).
+    const pm = manifest.packageManager === 'pnpm' ? 'pnpm' : manifest.packageManager === 'yarn' ? 'yarn' : 'npm'
+    const runner = pm === 'npm' ? 'npm run' : pm // pnpm/yarn run a script as `pnpm <script>` / `yarn <script>`
+    const has = (k: string) => (s[k] ? `${runner} ${k}` : null)
     return {
-      install: 'npm install',
+      install: `${pm} install`,
       build: has('build'),
-      test: s.test ? 'npm test' : null,
+      test: s.test ? (pm === 'npm' ? 'npm test' : `${pm} test`) : null,
       run: has('start') ?? has('dev'),
       packageManager: pm,
     }

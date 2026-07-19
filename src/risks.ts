@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { promises as fs } from 'node:fs'
 import { readTextCapped } from './util.js'
+import { cleanInline } from './manifest.js'
 import type { ManifestFacts, RiskFinding, StructureMap } from './types.js'
 
 // Secret-shaped patterns (high-confidence, low false-positive). NOT exhaustive —
@@ -15,7 +16,10 @@ const SECRET_PATTERNS: Array<{ re: RegExp; what: string }> = [
   { re: /\bxox[baprs]-[0-9]{6,}-[A-Za-z0-9-]{10,}\b/, what: 'Slack token' },
 ]
 
-const SUSPICIOUS_FILES = new Set(['.env', '.env.local', '.env.production', 'id_rsa', 'id_dsa', 'id_ecdsa', '.npmrc', '.pypirc', 'credentials', '.aws/credentials'])
+const SUSPICIOUS_FILES = new Set(['.env', '.env.local', '.env.production', 'id_rsa', 'id_dsa', 'id_ecdsa', '.npmrc', '.pypirc', 'credentials'])
+// Multi-segment entries are matched on the relative-path SUFFIX (a basename check
+// could never match these).
+const SUSPICIOUS_PATH_SUFFIXES = ['.aws/credentials', '.ssh/id_rsa', '.docker/config.json', '.kube/config']
 
 /** Assess supply-chain / hygiene risk surfaces (read-only, bounded). */
 export async function scanRisks(root: string, manifest: ManifestFacts | null, structure: StructureMap | null, files: string[]): Promise<RiskFinding[]> {
@@ -25,7 +29,7 @@ export async function scanRisks(root: string, manifest: ManifestFacts | null, st
   const s = manifest?.scripts ?? {}
   for (const hook of ['preinstall', 'install', 'postinstall', 'prepare']) {
     if (s[hook]) {
-      risks.push({ level: 'high', kind: 'install-hook', detail: `runs on install → "${hook}": ${s[hook].slice(0, 80)}`, path: 'package.json' })
+      risks.push({ level: 'high', kind: 'install-hook', detail: `runs on install → "${hook}": ${cleanInline(s[hook], 80)}`, path: 'package.json' })
     }
   }
 
@@ -34,18 +38,17 @@ export async function scanRisks(root: string, manifest: ManifestFacts | null, st
     risks.push({ level: 'low', kind: 'no-lockfile', detail: 'no lockfile — installed versions are not pinned/reproducible' })
   }
 
-  // 3) Committed secret-bearing files by name.
+  // 3) Committed secret-bearing files by name or path suffix.
   for (const f of files) {
     const base = f.split('/').pop() ?? f
-    if (SUSPICIOUS_FILES.has(base)) {
-      risks.push({ level: base.startsWith('.env') ? 'medium' : 'high', kind: 'sensitive-file', detail: `sensitive file committed: ${f}`, path: f })
+    if (SUSPICIOUS_FILES.has(base) || SUSPICIOUS_PATH_SUFFIXES.some((suf) => f === suf || f.endsWith('/' + suf))) {
+      risks.push({ level: base.startsWith('.env') ? 'medium' : 'high', kind: 'sensitive-file', detail: `sensitive file committed: ${cleanInline(f, 160)}`, path: f })
     }
   }
 
   // 4) Secret PATTERNS in a bounded sample of small text files.
-  const textish = files
-    .filter((f) => /\.(env|txt|json|ya?ml|toml|md|js|ts|py|sh|cfg|ini|pem|key)$/i.test(f) || !f.includes('.'))
-    .slice(0, 400)
+  const candidates = files.filter((f) => /\.(env|txt|json|ya?ml|toml|md|js|ts|py|sh|cfg|ini|pem|key)$/i.test(f) || !f.includes('.'))
+  const textish = candidates.slice(0, 400)
   let scanned = 0
   for (const rel of textish) {
     if (scanned >= 200) break
@@ -54,10 +57,15 @@ export async function scanRisks(root: string, manifest: ManifestFacts | null, st
     scanned++
     for (const { re, what } of SECRET_PATTERNS) {
       if (re.test(content)) {
-        risks.push({ level: 'high', kind: 'hardcoded-secret', detail: `possible ${what} in ${rel}`, path: rel })
+        risks.push({ level: 'high', kind: 'hardcoded-secret', detail: `possible ${what} in ${cleanInline(rel, 160)}`, path: rel })
         break
       }
     }
+  }
+  // Honesty: if the scan didn't cover every candidate, say so — "no secret found"
+  // over a partial scan is NOT "clean".
+  if (scanned < candidates.length) {
+    risks.push({ level: 'info', kind: 'secret-scan-partial', detail: `secret scan covered ${scanned} of ${candidates.length} candidate file(s) — absence of a finding is not a guarantee` })
   }
 
   // 5) Large binaries — opaque surface an agent should not blindly trust/execute.
