@@ -1,6 +1,6 @@
 {
   "name": "@dir-ai/voyager-repo",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Voyager's repo-penetration organ: an AI agent's proactive, read-only scout to safely orient in an unknown repository before touching it. Framed, confidence-scored.",
   "type": "module",
   "license": "MIT",
