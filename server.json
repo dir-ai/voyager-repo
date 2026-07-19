@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.dir-ai/voyager-repo",
+  "description": "An AI agent's safe read-only scout to orient in an unknown repository before touching it.",
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@dir-ai/voyager-repo",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" },
+      "packageArguments": [
+        { "type": "positional", "valueHint": "subcommand", "value": "mcp" }
+      ]
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/dir-ai/voyager-repo",
+    "source": "github"
+  }
+}

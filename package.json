@@ -1,0 +1,67 @@
+{
+  "name": "@dir-ai/voyager-repo",
+  "version": "0.1.0",
+  "description": "Pathfinder — Voyager's repo-penetration organ: an AI agent's proactive scout that safely orients itself in an unknown repository before touching it. Read-only, framed, confidence-scored.",
+  "type": "module",
+  "license": "MIT",
+  "author": "dir-ai",
+  "homepage": "https://github.com/dir-ai/voyager-repo#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dir-ai/voyager-repo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dir-ai/voyager-repo/issues"
+  },
+  "keywords": [
+    "ai-agents",
+    "code-intelligence",
+    "repository-analysis",
+    "onboarding",
+    "mcp",
+    "model-context-protocol",
+    "supply-chain",
+    "static-analysis",
+    "voyager"
+  ],
+  "mcpName": "io.github.dir-ai/voyager-repo",
+  "bin": {
+    "voyager-repo": "dist/cli.js",
+    "pathfinder": "dist/cli.js",
+    "voyager-repo-mcp": "dist/mcp.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "server.json",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test scripts/run-tests.mjs"
+  },
+  "dependencies": {
+    "@dir-ai/voyager": "^1.1.1",
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
+  }
+}
