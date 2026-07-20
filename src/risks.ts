@@ -1,8 +1,12 @@
 import { join } from 'node:path'
 import { promises as fs } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { readTextCapped, readTextContained, existsContained } from './util.js'
 import { cleanInline } from './manifest.js'
 import type { ManifestFacts, RiskFinding, StructureMap } from './types.js'
+
+const pExecFile = promisify(execFile)
 
 // Secret-shaped patterns (high-confidence, low false-positive). NOT exhaustive —
 // a signal for the agent, not a secret scanner.
@@ -169,6 +173,53 @@ export async function scanRisks(root: string, manifest: ManifestFacts | null, st
     }
     const obf = obfuscationScore(content)
     if (obf >= 3) { risks.push({ level: 'medium', kind: 'code-obfuscation', detail: `${cleanInline(rel, 120)} looks obfuscated (score ${obf}: encoded blobs / escape density / packed lines) — read before trusting`, path: rel }); codeFindings++ }
+  }
+
+  // 3g) DOCKERFILE analysis — the container recipe is code that runs privileged.
+  for (const rel of files.filter((f) => /(^|\/)Dockerfile(\.\w+)?$/i.test(f)).slice(0, 8)) {
+    const c = await readTextContained(root, rel, 128 * 1024)
+    if (c == null) continue
+    if (/^\s*FROM\s+\S+(:latest)?\s*(AS\s+\w+)?\s*$/im.test(c) && !/^\s*FROM\s+\S+:(?!latest)[\w.-]+/im.test(c)) risks.push({ level: 'low', kind: 'docker-unpinned-base', detail: `${rel}: base image is unpinned (no tag / :latest) — non-reproducible, may pull a changed/backdoored image`, path: rel })
+    for (const m of c.matchAll(/^\s*(?:ENV|ARG)\s+([A-Z0-9_]*(?:SECRET|PASSWORD|TOKEN|APIKEY|API_KEY|ACCESS_KEY|PRIVATE_KEY)[A-Z0-9_]*)\s*[= ]\s*(\S+)/gim)) risks.push({ level: 'high', kind: 'docker-secret', detail: `${rel}: a secret is baked into the image via ${cleanInline(m[1], 40)} — it persists in every layer; use build secrets / runtime env`, path: rel })
+    if (/^\s*RUN\s[\s\S]*?(?:curl|wget)\b[^\n|]{0,200}\|\s*(?:ba)?sh/im.test(c)) risks.push({ level: 'high', kind: 'docker-download-exec', detail: `${rel}: a RUN step pipes a downloaded script into a shell (curl|bash) — remote code baked into the image`, path: rel })
+    for (const m of c.matchAll(/^\s*EXPOSE\s+(\d{1,5})/gim)) if (['22', '23', '3389'].includes(m[1])) risks.push({ level: 'medium', kind: 'docker-exposed-admin', detail: `${rel}: EXPOSE ${m[1]} — an admin/remote-access port (ssh/telnet/rdp) is exposed from the container`, path: rel })
+    if (/ADD\s+https?:\/\//i.test(c)) risks.push({ level: 'medium', kind: 'docker-remote-add', detail: `${rel}: ADD pulls a remote URL — unverified content into the image; prefer COPY of vendored files`, path: rel })
+    if (!/^\s*USER\s+(?!root\b)\w/im.test(c)) risks.push({ level: 'low', kind: 'docker-root', detail: `${rel}: no non-root USER — the container runs as root by default`, path: rel })
+  }
+
+  // 3h) docker-compose risk — privileged, host networking, the docker socket, open binds.
+  for (const rel of files.filter((f) => /(^|\/)(docker-compose(\.\w+)?|compose)\.ya?ml$/i.test(f)).slice(0, 6)) {
+    const c = await readTextContained(root, rel, 128 * 1024)
+    if (c == null) continue
+    if (/privileged\s*:\s*true/i.test(c)) risks.push({ level: 'high', kind: 'compose-privileged', detail: `${rel}: a service runs privileged: true — full host device access, a container escape lands as root on the host`, path: rel })
+    if (/network_mode\s*:\s*["']?host/i.test(c)) risks.push({ level: 'medium', kind: 'compose-host-network', detail: `${rel}: network_mode: host — the container shares the host network namespace (no isolation)`, path: rel })
+    if (/\/var\/run\/docker\.sock/i.test(c)) risks.push({ level: 'high', kind: 'compose-docker-socket', detail: `${rel}: the Docker socket is mounted into a container — equivalent to root on the host`, path: rel })
+    if (/["']?0\.0\.0\.0:\d+/i.test(c)) risks.push({ level: 'medium', kind: 'compose-open-bind', detail: `${rel}: a port is bound to 0.0.0.0 — reachable from every interface, not just localhost`, path: rel })
+  }
+
+  // 3i) IaC / Terraform — a public bucket or an open security group is one line away.
+  for (const rel of files.filter((f) => /\.(tf|tf\.json)$/i.test(f) || /(^|\/)(cloudformation|template)\.(ya?ml|json)$/i.test(f)).slice(0, 30)) {
+    const c = await readTextContained(root, rel, 128 * 1024)
+    if (c == null) continue
+    if (/acl\s*=\s*["'](public-read|public-read-write)["']/i.test(c) || /"AccessControl"\s*:\s*"Public/i.test(c)) risks.push({ level: 'high', kind: 'iac-public-bucket', detail: `${rel}: a storage bucket is world-readable (public ACL) — data exposure`, path: rel })
+    if (/cidr_blocks\s*=\s*\[[^\]]*["']0\.0\.0\.0\/0["']/i.test(c) || /"CidrIp"\s*:\s*"0\.0\.0\.0\/0"/i.test(c)) risks.push({ level: 'high', kind: 'iac-open-ingress', detail: `${rel}: a security-group ingress allows 0.0.0.0/0 — the port is open to the entire internet`, path: rel })
+    if (/publicly_accessible\s*=\s*true/i.test(c)) risks.push({ level: 'high', kind: 'iac-public-db', detail: `${rel}: a database is publicly_accessible = true — the DB is reachable from the internet`, path: rel })
+    for (const { re, what } of SECRET_PATTERNS) if (re.test(c)) { risks.push({ level: 'high', kind: 'iac-hardcoded-secret', detail: `${rel}: a ${what} is hardcoded in infrastructure code`, path: rel }); break }
+  }
+
+  // 3j) GIT HISTORY secrets — a credential committed and later removed is invisible to
+  // a working-tree scan but still in the object store (and any clone). Ask git which
+  // commits ever added/removed secret-shaped content (bounded, no huge diff output).
+  const HIST_RE = 'AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|ghp_[A-Za-z0-9]{36}|xox[baprs]-[0-9]'
+  try {
+    const { stdout } = await pExecFile('git', ['-C', root, 'log', '--all', '--oneline', '-G', HIST_RE, '-n', '20'], {
+      timeout: 8000, maxBuffer: 1 << 20,
+      env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_TERMINAL_PROMPT: '0', GIT_PAGER: 'cat' },
+    })
+    const commits = stdout.trim().split('\n').filter(Boolean)
+    if (commits.length) risks.push({ level: 'high', kind: 'git-history-secret', detail: `${commits.length} commit(s) in git history added/removed secret-shaped content (a credential may be committed and only "removed" from the working tree — still in every clone): ${cleanInline(commits[0], 80)}`, path: '(git history)' })
+  } catch {
+    /* not a git repo / git unavailable → skip (working-tree scan still ran) */
   }
 
   // 4) Secret PATTERNS in a bounded sample of small text files.

@@ -99,3 +99,27 @@ test('scanRisks: code signals (eval/shell/remote-call/obfuscation), MCP config, 
     assert.ok(kinds.has(k), `expected risk ${k}; got ${[...kinds].join(', ')}`)
   }
 })
+
+// Round-3 reds: Dockerfile / compose / IaC + git-history secret detection.
+test('scanRisks: Dockerfile, docker-compose and Terraform risks + git-history secret', async () => {
+  const { execFileSync } = await import('node:child_process')
+  const dir = await mkRepo({
+    'package.json': { name: 'x', version: '1.0.0' },
+    'Dockerfile': 'FROM node:latest\nENV DB_PASSWORD=hunter2secret\nEXPOSE 22\n',
+    'docker-compose.yml': 'services:\n  a:\n    image: x\n    privileged: true\n    ports:\n      - "0.0.0.0:80:80"\n',
+    'main.tf': 'resource "aws_s3_bucket" "b" { acl = "public-read" }\ningress { cidr_blocks = ["0.0.0.0/0"] }\n',
+    'creds.txt': 'AKIAIOSFODNN7EXAMPLE\n',
+  })
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' }
+  execFileSync('git', ['-C', dir, 'init'], { stdio: 'ignore', env })
+  execFileSync('git', ['-C', dir, 'add', '.'], { stdio: 'ignore', env })
+  execFileSync('git', ['-C', dir, 'commit', '-m', 'x'], { stdio: 'ignore', env })
+  const { writeFile } = await import('node:fs/promises')
+  await writeFile(join(dir, 'creds.txt'), 'clean\n')
+  execFileSync('git', ['-C', dir, 'commit', '-am', 'clean'], { stdio: 'ignore', env })
+
+  const kinds = new Set((await scout(dir)).risks.map((r) => r.kind))
+  for (const k of ['docker-unpinned-base', 'docker-secret', 'docker-exposed-admin', 'compose-privileged', 'compose-open-bind', 'iac-public-bucket', 'iac-open-ingress', 'git-history-secret']) {
+    assert.ok(kinds.has(k), `expected ${k}; got ${[...kinds].join(', ')}`)
+  }
+})
