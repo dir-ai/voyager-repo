@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { checkPackage } from '@dir-ai/voyager'
-import { walkRepo, exists } from './util.js'
+import { walkRepo, exists, readTextContained } from './util.js'
 import { scanManifest } from './manifest.js'
 import { scanStructure } from './structure.js'
 import { inferBuild } from './build.js'
@@ -70,13 +70,18 @@ export async function scout(input: string, opts: ScoutOptions = {}): Promise<Ori
   const checkN = Math.min(opts.checkDeps ?? 0, 20)
   if (checkN > 0 && manifest?.ecosystem === 'npm' && manifest.directDependencies.length) {
     log(`vetting ${Math.min(checkN, manifest.directDependencies.length)} dependencies via Voyager…`)
+    // Vet the EXACT version the lockfile pins, not the latest registry version — a
+    // repo locked to a vulnerable version must not read clean because the latest
+    // one is fine (Codex's repo P0: minimist@1.2.5 pinned while 1.2.8 is clean).
+    const locked = await lockedVersions(root)
     const toCheck = manifest.directDependencies.slice(0, checkN)
     for (const name of toCheck) {
+      const version = locked[name]
       try {
-        const est = await checkPackage({ name, ecosystem: 'npm' })
-        dependencies.findings.push({ name, verdict: est.error ? 'unknown' : est.verdict, note: est.error ?? est.claim?.warning })
+        const est = await checkPackage({ name, ecosystem: 'npm', version })
+        dependencies.findings.push({ name: version ? `${name}@${version}` : name, verdict: est.error ? 'unknown' : est.verdict, note: est.error ?? est.claim?.warning })
       } catch (e) {
-        dependencies.findings.push({ name, verdict: 'unknown', note: (e as Error)?.message?.slice(0, 120) })
+        dependencies.findings.push({ name: version ? `${name}@${version}` : name, verdict: 'unknown', note: (e as Error)?.message?.slice(0, 120) })
       }
       dependencies.checked++
     }
@@ -113,4 +118,24 @@ export async function scout(input: string, opts: ScoutOptions = {}): Promise<Ori
     summary, purpose, manifest, structure, build, dependencies, health, risks, approach,
     confidence, sanitization: { framedFields, strippedPayloads }, suggestedNextProbe, notes: [],
   }
+}
+
+/** Resolve EXACT installed versions from package-lock.json so dependency vetting
+ *  probes what is actually pinned (lockfileVersion 1 flat map, and 2/3 keyed by
+ *  node_modules paths). Malformed lock → empty map (vetting falls back to latest). */
+async function lockedVersions(root: string): Promise<Record<string, string>> {
+  const out: Record<string, string> = {}
+  const lock = await readTextContained(root, 'package-lock.json')
+  if (!lock) return out
+  try {
+    const j = JSON.parse(lock) as { packages?: Record<string, { version?: string }>; dependencies?: Record<string, { version?: string }> }
+    for (const [k, v] of Object.entries(j.packages ?? {})) {
+      const m = /(?:^|\/)node_modules\/((?:@[^/]+\/)?[^/]+)$/.exec(k)
+      if (m && typeof v?.version === 'string' && !out[m[1]]) out[m[1]] = v.version
+    }
+    for (const [name, v] of Object.entries(j.dependencies ?? {})) if (typeof v?.version === 'string' && !out[name]) out[name] = v.version
+  } catch {
+    /* malformed lockfile → no pinned versions */
+  }
+  return out
 }
