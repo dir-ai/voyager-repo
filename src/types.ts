@@ -62,7 +62,7 @@ export interface DependencyPosture {
   direct: number
   /** How many were actually verified via Voyager (bounded/opt-in). */
   checked: number
-  coverage: 'none' | 'sampled' | 'direct'
+  coverage: 'none' | 'sampled' | 'direct' | 'tree'
   findings: DependencyFinding[]
 }
 

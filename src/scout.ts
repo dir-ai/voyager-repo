@@ -72,21 +72,37 @@ export async function scout(input: string, opts: ScoutOptions = {}): Promise<Ori
     log(`vetting ${Math.min(checkN, manifest.directDependencies.length)} dependencies via Voyager…`)
     // Vet the EXACT version the lockfile pins, not the latest registry version — a
     // repo locked to a vulnerable version must not read clean because the latest
-    // one is fine (Codex's repo P0: minimist@1.2.5 pinned while 1.2.8 is clean).
+    // one is fine (Codex's repo P0). AND walk the TRANSITIVE tree from the lockfile,
+    // not just the direct deps (Kimi #5: a vulnerable minimist buried transitively
+    // is where real supply-chain risk hides). Both bounded so a huge lockfile can't
+    // fan out unboundedly.
     const locked = await lockedVersions(root)
-    const toCheck = manifest.directDependencies.slice(0, checkN)
-    for (const name of toCheck) {
-      const version = locked[name]
+    const directSet = new Set(manifest.directDependencies)
+    const transCap = Math.min(40, checkN * 5)
+    const toVet: Array<{ name: string; version?: string; direct: boolean }> = manifest.directDependencies.slice(0, checkN).map((name) => ({ name, version: locked[name], direct: true }))
+    for (const [name, version] of Object.entries(locked)) {
+      if (directSet.has(name)) continue
+      if (toVet.length >= checkN + transCap) break
+      toVet.push({ name, version, direct: false })
+    }
+    let transitiveChecked = 0
+    for (const { name, version, direct } of toVet) {
+      const label = version ? `${name}@${version}` : name
       try {
         const est = await checkPackage({ name, ecosystem: 'npm', version })
-        dependencies.findings.push({ name: version ? `${name}@${version}` : name, verdict: est.error ? 'unknown' : est.verdict, note: est.error ?? est.claim?.warning })
+        dependencies.findings.push({ name: label, verdict: est.error ? 'unknown' : est.verdict, note: `${direct ? '' : '(transitive) '}${est.error ?? est.claim?.warning ?? ''}`.trim() || undefined })
       } catch (e) {
-        dependencies.findings.push({ name: version ? `${name}@${version}` : name, verdict: 'unknown', note: (e as Error)?.message?.slice(0, 120) })
+        dependencies.findings.push({ name: label, verdict: 'unknown', note: `${direct ? '' : '(transitive) '}${(e as Error)?.message?.slice(0, 120) ?? ''}`.trim() || undefined })
       }
       dependencies.checked++
+      if (!direct) transitiveChecked++
     }
-    dependencies.coverage = dependencies.checked >= dependencies.direct ? 'direct' : 'sampled'
-    for (const f of dependencies.findings) if (f.verdict === 'rejected') risks.push({ level: 'high', kind: 'unsafe-dependency', detail: `dependency ${f.name} is REJECTED by Voyager: ${f.note ?? 'unsafe'}` })
+    dependencies.coverage = transitiveChecked > 0 ? 'tree' : dependencies.checked >= dependencies.direct ? 'direct' : 'sampled'
+    for (const f of dependencies.findings) {
+      if (f.verdict !== 'rejected') continue
+      const transitive = /\(transitive\)/.test(f.note ?? '')
+      risks.push({ level: 'high', kind: transitive ? 'unsafe-transitive-dependency' : 'unsafe-dependency', detail: `${transitive ? 'transitive ' : ''}dependency ${f.name} is REJECTED by Voyager: ${(f.note ?? 'unsafe').replace('(transitive) ', '')}` })
+    }
   }
 
   const approach = await planApproach(root, opts, { manifest, build, risks, isGitUrl: false })
