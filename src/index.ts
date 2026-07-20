@@ -8,6 +8,7 @@
 // networks. Repotector is the guardian that receives and controls; these are its
 // counterpart, the agent's eyes reaching outward.
 export { scout } from './scout.js'
+export { wrapScanners, adaptTrivy, adaptSemgrep } from './scanners.js'
 export { VERSION } from './version.js'
 export type {
   OrientationBrief,

@@ -7,6 +7,7 @@ import { inferBuild } from './build.js'
 import { scanHealth } from './health.js'
 import { scanRisks } from './risks.js'
 import { buildCodeMap } from './codemap.js'
+import { wrapScanners } from './scanners.js'
 import { planApproach } from './approach.js'
 import type { Confidence, DependencyPosture, OrientationBrief, ScoutOptions } from './types.js'
 
@@ -68,6 +69,8 @@ export async function scout(input: string, opts: ScoutOptions = {}): Promise<Ori
   const risks = await scanRisks(root, manifest, structure, files)
   log('building the code map (routes / components / config / services)…')
   const codeMap = await buildCodeMap(root, files, manifest, structure)
+  const wrapped = opts.wrapScanners ? await wrapScanners(root) : { findings: [], notes: [] }
+  risks.push(...wrapped.findings)
 
   // ── Dependency posture — compose with Voyager (opt-in, bounded) ─────────────
   const dependencies: DependencyPosture = { direct: manifest?.directDependencies.length ?? 0, checked: 0, coverage: 'none', findings: [] }
@@ -142,7 +145,7 @@ export async function scout(input: string, opts: ScoutOptions = {}): Promise<Ori
   return {
     target: { input, kind: 'local', resolvedPath: root },
     summary, purpose, manifest, structure, codeMap, build, dependencies, health, risks, approach,
-    confidence, sanitization: { framedFields, strippedPayloads }, suggestedNextProbe, notes: [],
+    confidence, sanitization: { framedFields, strippedPayloads }, suggestedNextProbe, notes: wrapped.notes,
   }
 }
 

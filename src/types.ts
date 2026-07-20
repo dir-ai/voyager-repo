@@ -190,5 +190,9 @@ export interface ScoutOptions {
   clone?: boolean
   /** Max files to walk before truncating (protects against huge monorepos). */
   maxFiles?: number
+  /** WRAP external coverage engines (trivy/semgrep) if they are on PATH, adapting
+   *  their output into framed findings under the same gate. Opt-in (they are slow);
+   *  off by default. Absence of a tool is reported, never hidden. */
+  wrapScanners?: boolean
   onLog?: (line: string) => void
 }
