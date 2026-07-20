@@ -114,3 +114,26 @@ test('CI analysis: github.event.* interpolated into run: is flagged as script in
   const b = await scout(dir)
   assert.ok(b.risks.some((r) => r.kind === 'ci-script-injection'))
 })
+
+// Round-4: deep front+back comprehension — the code map.
+test('codeMap: extracts stack, API routes, UI components, services, config from a full-stack repo', async () => {
+  const { mkRepo } = await import('./_fixtures.js')
+  const dir = await mkRepo({
+    'package.json': { name: 'app', version: '1.0.0', dependencies: { express: '^4', react: '^18', next: '^14' } },
+    'src/server.js': "const app=require('express')();\napp.get('/api/items',(q,r)=>r.json([]));\napp.post('/api/login',(q,r)=>r.end());\nconst u=process.env.DATABASE_URL;\napp.listen(3000);\n",
+    'src/components/Nav.tsx': 'export default function Nav(){return (<nav/>)}\n',
+    'pages/api/ping.ts': 'export default function h(q,r){r.json({})}\n',
+    'docker-compose.yml': 'services:\n  web:\n    image: node:20\n    ports:\n      - "3000:3000"\n  db:\n    image: postgres:16\n',
+  })
+  const cm = (await scout(dir)).codeMap
+  assert.ok(cm)
+  assert.ok(cm!.stack.includes('Express') && cm!.stack.includes('React') && cm!.stack.includes('Next.js'))
+  const routes = cm!.routes.map((r) => `${r.method} ${r.path}`)
+  assert.ok(routes.some((r) => /GET \/api\/items/.test(r)), 'express GET route')
+  assert.ok(routes.some((r) => /POST \/api\/login/.test(r)), 'express POST route')
+  assert.ok(routes.some((r) => /\/api\/ping/.test(r)), 'next api route from filesystem')
+  assert.ok(cm!.components.some((c) => c.name === 'Nav'), 'react component')
+  assert.ok(cm!.services.some((s) => s.name === 'web') && cm!.services.some((s) => s.name === 'db'), 'compose services')
+  assert.ok(cm!.config.envVars.includes('DATABASE_URL'), 'env var')
+  assert.ok(cm!.config.ports.includes(3000), 'port')
+})

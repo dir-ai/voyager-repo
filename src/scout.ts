@@ -6,6 +6,7 @@ import { scanStructure } from './structure.js'
 import { inferBuild } from './build.js'
 import { scanHealth } from './health.js'
 import { scanRisks } from './risks.js'
+import { buildCodeMap } from './codemap.js'
 import { planApproach } from './approach.js'
 import type { Confidence, DependencyPosture, OrientationBrief, ScoutOptions } from './types.js'
 
@@ -25,6 +26,7 @@ export async function scout(input: string, opts: ScoutOptions = {}): Promise<Ori
   const base = (): OrientationBrief => ({
     target: { input, kind: isGitUrl ? 'git-url' : 'local', resolvedPath: null },
     summary: '', purpose: null, manifest: null, structure: null,
+    codeMap: null,
     build: { install: null, build: null, test: null, run: null, packageManager: null },
     dependencies: { direct: 0, checked: 0, coverage: 'none', findings: [] },
     health: { isGitRepo: false, commits: null, contributors: null, topAuthorShare: null, lastCommitISO: null, hotspots: [], archivedHint: false },
@@ -64,6 +66,8 @@ export async function scout(input: string, opts: ScoutOptions = {}): Promise<Ori
   const { files } = await walkRepo(root, maxFiles)
   log('scanning risk surfaces…')
   const risks = await scanRisks(root, manifest, structure, files)
+  log('building the code map (routes / components / config / services)…')
+  const codeMap = await buildCodeMap(root, files, manifest, structure)
 
   // ── Dependency posture — compose with Voyager (opt-in, bounded) ─────────────
   const dependencies: DependencyPosture = { direct: manifest?.directDependencies.length ?? 0, checked: 0, coverage: 'none', findings: [] }
@@ -111,10 +115,16 @@ export async function scout(input: string, opts: ScoutOptions = {}): Promise<Ori
   const purpose = manifest?.description ?? null
   const name = manifest?.name ?? root.split(/[\\/]/).pop() ?? 'repository'
   const langTop = structure ? Object.keys(structure.languages)[0] : null
-  const summary =
+  const baseSummary =
     purpose?.framed
       ? `${name}${manifest?.version ? `@${manifest.version}` : ''} — ${purpose.framed.split('\n')[0].slice(0, 160)}`
       : `${name} — a ${langTop ?? 'code'} repository${manifest ? ` (${manifest.ecosystem})` : ''}; purpose not declared, infer from the entrypoints.`
+  const mapBits: string[] = []
+  if (codeMap.stack.length) mapBits.push(codeMap.stack.join('/'))
+  if (codeMap.routes.length) mapBits.push(`${codeMap.routes.filter((r) => r.kind === 'api').length} API route(s)`)
+  if (codeMap.components.length) mapBits.push(`${codeMap.components.length} UI component(s)`)
+  if (codeMap.services.length) mapBits.push(`${codeMap.services.length} service(s)`)
+  const summary = mapBits.length ? `${baseSummary} [${mapBits.join(' · ')}]` : baseSummary
 
   const framedFields = [purpose, approach.handshake?.framed].filter(Boolean).length
   const strippedPayloads = (purpose?.stripped ?? 0) + (approach.handshake?.framed?.stripped ?? 0)
@@ -131,7 +141,7 @@ export async function scout(input: string, opts: ScoutOptions = {}): Promise<Ori
 
   return {
     target: { input, kind: 'local', resolvedPath: root },
-    summary, purpose, manifest, structure, build, dependencies, health, risks, approach,
+    summary, purpose, manifest, structure, codeMap, build, dependencies, health, risks, approach,
     confidence, sanitization: { framedFields, strippedPayloads }, suggestedNextProbe, notes: [],
   }
 }

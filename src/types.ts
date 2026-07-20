@@ -112,6 +112,52 @@ export interface ApproachPlan {
   orderedNextSteps: string[]
 }
 
+/** An HTTP route / API endpoint the code exposes. */
+export interface CodeRoute {
+  method: string // GET/POST/… or 'PAGE' for a UI route, 'WS' for websocket
+  path: string
+  file: string
+  kind: 'api' | 'page' | 'websocket'
+  framework: string
+}
+
+/** A UI unit — component, page/view, layout — with where it lives. */
+export interface CodeComponent {
+  name: string
+  file: string
+  kind: 'component' | 'page' | 'view' | 'layout'
+  framework: string
+}
+
+/** A docker-compose service (or equivalent) the repo defines. */
+export interface CodeService {
+  name: string
+  image: string | null
+  ports: string[]
+  dependsOn: string[]
+}
+
+/**
+ * The CODE MAP — deep front+back comprehension of a repo: the stack, the API/route
+ * surface, the UI components/pages, the config surface (env/ports/config files) and
+ * the composed services. This is what turns "orientation" into "understanding":
+ * the map a senior engineer builds before touching a codebase.
+ */
+export interface CodeMap {
+  stack: string[]
+  routes: CodeRoute[]
+  components: CodeComponent[]
+  services: CodeService[]
+  config: {
+    envVars: string[]
+    configFiles: string[]
+    ports: number[]
+  }
+  entrypoints: string[]
+  /** Honest coverage note: what was and wasn't scanned. */
+  coverage: string
+}
+
 export interface OrientationBrief {
   target: { input: string; kind: 'local' | 'git-url'; resolvedPath: string | null }
   /** One-line "what is this and what is it for", derived + framed. */
@@ -119,6 +165,8 @@ export interface OrientationBrief {
   purpose: FramedText | null
   manifest: ManifestFacts | null
   structure: StructureMap | null
+  /** Deep front+back comprehension: routes, components, config, services. */
+  codeMap: CodeMap | null
   build: BuildInfo
   dependencies: DependencyPosture
   health: RepoHealth
