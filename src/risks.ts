@@ -21,6 +21,36 @@ const SUSPICIOUS_FILES = new Set(['.env', '.env.local', '.env.production', 'id_r
 // could never match these).
 const SUSPICIOUS_PATH_SUFFIXES = ['.aws/credentials', '.ssh/id_rsa', '.docker/config.json', '.kube/config']
 
+// Opaque committed artifacts an agent must not blindly trust or execute — their
+// contents aren't reviewable in source.
+const BINARY_EXT = /\.(so|dll|exe|dylib|node|wasm|a|o|bin|class|pyc|pyd|jar|deb|rpm|msi|apk|dmg)$/i
+
+// Dangerous behavioural signals in SOURCE — a preinstall hook is not the only RCE
+// vector; the code itself can carry one. These are read-only static SIGNALS (with
+// confidence), not proof. Order matters (first match per category wins per file).
+const CODE_SIGNALS: Array<{ kind: string; level: RiskFinding['level']; what: string; re: RegExp }> = [
+  { kind: 'code-eval', level: 'high', what: 'dynamic code evaluation (eval / new Function / vm.runInNewContext)', re: /\beval\s*\(|new\s+Function\s*\(|vm\.runInNew(?:Context|ContextAsync)|\bexec\s*\(\s*compile\s*\(/ },
+  { kind: 'code-shell', level: 'high', what: 'shells out to the OS (child_process / os.system / subprocess shell)', re: /child_process|\bexecSync\s*\(|\bspawnSync?\s*\(|\bos\.system\s*\(|subprocess\.(?:call|run|Popen)\b|\bpopen\s*\(/i },
+  { kind: 'code-download-exec', level: 'high', what: 'downloads and executes (curl|bash / IWR|IEX)', re: /(?:curl|wget)\b[^\n|]{0,200}\|\s*(?:ba)?sh|Invoke-WebRequest[\s\S]{0,120}Invoke-Expression|iwr[\s\S]{0,80}iex/i },
+  { kind: 'code-network-exfil', level: 'medium', what: 'calls a hardcoded remote host (possible C2 / exfil)', re: /(?:fetch|axios|https?\.(?:get|request)|urllib\.request|requests\.(?:get|post))\s*\(\s*["'`]https?:\/\/(?!(?:localhost|127\.0|0\.0\.0\.0|unpkg\.com|cdn\.|cdnjs|jsdelivr|googleapis|registry\.npmjs))/i },
+]
+
+/** A weighted obfuscation score. HARD signals (escape runs, char-code arrays,
+ *  decode-of-a-blob) are ~never in hand-written code and count 2; SOFT signals
+ *  (a long base64 blob, a very long line) also appear in legit minified/data-URI
+ *  code and count 1. Flag at ≥3, so a single soft signal never fires but one hard
+ *  signal plus any other does — catching packed malware while sparing legit files. */
+function obfuscationScore(s: string): number {
+  let score = 0
+  if (/(?:\\x[0-9a-f]{2}){8,}/i.test(s)) score += 2
+  if (/(?:\\u[0-9a-f]{4}){6,}/i.test(s)) score += 2
+  if (/String\.fromCharCode\s*\((?:\s*\d+\s*,){10,}/.test(s)) score += 2
+  if ((/atob\s*\(|Buffer\.from\s*\([^)]*base64/.test(s)) && /[A-Za-z0-9+/]{100,}/.test(s)) score += 2
+  if (/[A-Za-z0-9+/]{200,}={0,2}/.test(s)) score += 1
+  if (s.split('\n').reduce((m, l) => Math.max(m, l.length), 0) > 2000) score += 1
+  return score
+}
+
 /** Assess supply-chain / hygiene risk surfaces (read-only, bounded). */
 export async function scanRisks(root: string, manifest: ManifestFacts | null, structure: StructureMap | null, files: string[]): Promise<RiskFinding[]> {
   const risks: RiskFinding[] = []
@@ -106,6 +136,41 @@ export async function scanRisks(root: string, manifest: ManifestFacts | null, st
     }
   }
 
+  // 3e) MCP / agent tool-config surface — a repo can ship an editor/agent config
+  // that will be AUTO-RUN when opened (.cursor/mcp.json, .claude/settings.json, …).
+  // A `command` like `curl … | bash` or a remote http server URL is agent-side RCE
+  // the moment the victim opens the repo in their editor. (.dot-dir → read directly.)
+  for (const rel of ['.mcp.json', '.cursor/mcp.json', '.vscode/mcp.json', '.claude/settings.json', '.claude/settings.local.json', '.claude/mcp.json', '.continue/config.json']) {
+    const content = await readTextContained(root, rel, 64 * 1024)
+    if (content == null || !content.trim()) continue
+    let blob = content
+    try { blob = JSON.stringify(JSON.parse(content)) } catch { /* not JSON → scan raw */ }
+    const danger = /curl|wget|\bbash\b|\bsh\s+-c\b|\|\s*(?:ba)?sh|https?:\/\//i.test(blob)
+    risks.push({
+      level: danger ? 'high' : 'medium', kind: danger ? 'mcp-config-suspicious' : 'mcp-config',
+      detail: `agent/MCP tool-config "${rel}" present${danger ? ' with a REMOTE or shell command (curl|bash / http server) — it can run on the agent host when the repo is opened' : ' — an editor may auto-run its servers'}; treat as UNTRUSTED: ${cleanInline(content.replace(/\s+/g, ' '), 160)}`,
+      path: rel,
+    })
+  }
+
+  // 3f) Dangerous CODE signals (the L4 behavioural read): scan a bounded sample of
+  // source for eval/exec, shelling out, hardcoded remote calls and obfuscation.
+  const srcFiles = files.filter((f) => /\.(js|mjs|cjs|jsx|ts|tsx|py|rb|sh|ps1)$/i.test(f) && !/\.(min|bundle)\.|\.d\.ts$/i.test(f))
+  const codeTargets = [...new Set([...(structure?.entrypoints ?? []), ...srcFiles])].slice(0, 80)
+  let codeScanned = 0
+  let codeFindings = 0
+  for (const rel of codeTargets) {
+    if (codeScanned >= 50 || codeFindings >= 20) break
+    const content = await readTextCapped(join(root, rel), 256 * 1024)
+    if (content == null) continue
+    codeScanned++
+    for (const sig of CODE_SIGNALS) {
+      if (sig.re.test(content)) { risks.push({ level: sig.level, kind: sig.kind, detail: `${sig.what} — in ${cleanInline(rel, 120)}`, path: rel }); codeFindings++ }
+    }
+    const obf = obfuscationScore(content)
+    if (obf >= 3) { risks.push({ level: 'medium', kind: 'code-obfuscation', detail: `${cleanInline(rel, 120)} looks obfuscated (score ${obf}: encoded blobs / escape density / packed lines) — read before trusting`, path: rel }); codeFindings++ }
+  }
+
   // 4) Secret PATTERNS in a bounded sample of small text files.
   const candidates = files.filter((f) => /\.(env|txt|json|ya?ml|toml|md|js|ts|py|sh|cfg|ini|pem|key)$/i.test(f) || !f.includes('.'))
   const textish = candidates.slice(0, 400)
@@ -126,6 +191,15 @@ export async function scanRisks(root: string, manifest: ManifestFacts | null, st
   // over a partial scan is NOT "clean".
   if (scanned < candidates.length) {
     risks.push({ level: 'info', kind: 'secret-scan-partial', detail: `secret scan covered ${scanned} of ${candidates.length} candidate file(s) — absence of a finding is not a guarantee` })
+  }
+
+  // 5a) Committed BINARIES — opaque artifacts (.so/.dll/.exe/.node/.wasm/…) whose
+  // contents can't be reviewed in source. A committed native blob is a classic
+  // supply-chain hiding spot; flag by extension (no need to read it).
+  let binCount = 0
+  for (const rel of files) {
+    if (binCount >= 12) break
+    if (BINARY_EXT.test(rel)) { risks.push({ level: 'medium', kind: 'committed-binary', detail: `committed binary/opaque artifact: ${cleanInline(rel, 160)} — not reviewable in source; verify its provenance before trusting/running`, path: rel }); binCount++ }
   }
 
   // 5) Large binaries — opaque surface an agent should not blindly trust/execute.
