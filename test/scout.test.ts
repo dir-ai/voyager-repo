@@ -79,3 +79,38 @@ test('a remote git URL without consent is withheld, not cloned', async () => {
   assert.ok(b.approach.withheld.some((w) => /clone/i.test(w)))
   assert.equal(b.approach.permissions.clone, false)
 })
+
+// ── Kimi recall gaps: dot-dir content secrets + CI pwn-request ──────────────
+test('scans dot-dir file CONTENT: a live AWS key inside .aws/credentials is caught', async () => {
+  const dir = await mkRepo({
+    'package.json': { name: 'leaky', version: '1.0.0' },
+    '.aws/credentials': '[default]\naws_access_key_id = AKIAIOSFODNN7EXAMPLE\naws_secret_access_key = wJalr\n',
+  })
+  const b = await scout(dir)
+  assert.ok(b.risks.some((r) => r.kind === 'sensitive-file' && r.path === '.aws/credentials'))
+  assert.ok(b.risks.some((r) => r.kind === 'hardcoded-secret' && /AWS access key/i.test(r.detail)), 'the AKIA key INSIDE the dot-dir file is flagged, not just the filename')
+})
+
+test('CI analysis: a pull_request_target workflow that checks out PR head is a pwn-request', async () => {
+  const wf = [
+    'on: pull_request_target',
+    'jobs:',
+    '  build:',
+    '    runs-on: ubuntu-latest',
+    '    steps:',
+    '      - uses: actions/checkout@v4',
+    '        with:',
+    '          ref: ${{ github.event.pull_request.head.sha }}',
+    '      - run: npm install && npm test',
+  ].join('\n')
+  const dir = await mkRepo({ 'package.json': { name: 'ci', version: '1.0.0' }, '.github/workflows/ci.yml': wf })
+  const b = await scout(dir)
+  assert.ok(b.risks.some((r) => r.kind === 'ci-pwn-request'), 'pull_request_target + PR-head checkout → pwn-request')
+})
+
+test('CI analysis: github.event.* interpolated into run: is flagged as script injection', async () => {
+  const wf = ['on: issues', 'jobs:', '  x:', '    runs-on: ubuntu-latest', '    steps:', '      - run: echo "${{ github.event.issue.title }}"'].join('\n')
+  const dir = await mkRepo({ 'package.json': { name: 'inj', version: '1.0.0' }, '.github/workflows/x.yml': wf })
+  const b = await scout(dir)
+  assert.ok(b.risks.some((r) => r.kind === 'ci-script-injection'))
+})
